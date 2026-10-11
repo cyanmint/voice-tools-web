@@ -100,6 +100,7 @@ export default class Results extends Vue
 
 .results
   margin: 0 20px 0
+  position: relative
 
 .results, .result-tab
   display: flex
@@ -118,6 +119,10 @@ export default class Results extends Vue
   z-index: 2
 
 .inference-note
+  position: absolute
+  top: 0
+  left: 0
+  right: 0
   height: 20px
   margin: 0 20px
   color: $color-fg
@@ -125,6 +130,7 @@ export default class Results extends Vue
   line-height: 20px
   text-align: center
   white-space: nowrap
+  z-index: 1
 
 .load-error, .load-placeholder
   margin: 24px
@@ -135,7 +141,7 @@ export default class Results extends Vue
 .result-nav
   display: flex
   flex-direction: row
-  margin-top: 0
+  margin-top: 20px
   justify-content: center
   min-height: 40px
   color: $color-text-main
