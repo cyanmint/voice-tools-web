@@ -2,6 +2,13 @@
   <div class="results">
 <!--    <Waveform :audio="audio" v-if="audio" />-->
 
+    <div v-if="analysisLoaded" class="inference-note">
+      Analysis and audio processing ran in this browser; no audio was sent to a server.
+      <span v-if="!mlEnabled">ML classification is disabled.</span>
+      <span v-else>Frame classification used {{ inferenceBackend ? inferenceBackend.toUpperCase() : 'the local TensorFlow.js runtime' }}.</span>
+      <span v-if="mlError"> {{ mlError }}</span>
+    </div>
+
     <div class="result-nav unselectable anim">
       <div class="tab-button spectrogram" @click="() => activeTab = 1" :class="{sel: activeTab === 1}">
         Spectrogram
@@ -13,22 +20,26 @@
         Position
       </div>
     </div>
+    <div v-if="loadError" class="load-error" role="alert">{{ loadError }}</div>
 
     <!-- Spectrogram View -->
     <div class="result-tab card shadow" :style="activeTab === 1 ? {} : {display: 'none'}">
-      <Spectrogram v-if="spec" :spec="spec" :sr="specSr" :freq-arrays="freqArrays"/>
+      <Spectrogram v-if="spec?.length" :spec="spec" :sr="specSr" :freq-arrays="freqArrays"/>
+      <div v-else-if="loadError" class="load-placeholder">{{ loadError }}</div>
       <Loading v-else />
     </div>
 
     <!-- Classification Results -->
     <div class="result-tab card shadow" v-if="activeTab === 2">
-      <ClassificationResults v-if="stats" :stats="stats" :ml="ml" :audio-duration="audioDuration"/>
+      <ClassificationResults v-if="stats" :stats="stats" :ml="ml" :ml-enabled="mlEnabled" :audio-duration="audioDuration"/>
+      <div v-else-if="loadError" class="load-placeholder">{{ loadError }}</div>
       <Loading v-else />
     </div>
 
     <!-- Pitch vs Formant -->
     <div class="result-tab card shadow" v-if="activeTab === 3">
       <PitchResGraph v-if="stats" :stats="stats" />
+      <div v-else-if="loadError" class="load-placeholder">{{ loadError }}</div>
       <Loading v-else />
     </div>
   </div>
@@ -41,7 +52,7 @@ import Waveform from "@/views/comp/Waveform.vue";
 import PitchResGraph from "@/views/comp/PitchResGraph.vue";
 import ClassificationResults, {MLFrame, StatsResult} from "@/views/comp/ClassificationResults.vue";
 import Loading from '@/views/comp/Loading.vue';
-import {decodeBdictResult, request} from "@/js/Utils";
+import {getLocalAnalysis} from '@/js/local-inference/LocalResultStore';
 import { Prop } from 'vue-property-decorator';
 
 @Options({components: {PitchResGraph, ClassificationResults, Waveform, Spectrogram, Loading}})
@@ -50,28 +61,36 @@ export default class Results extends Vue
   @Prop({required: true}) uuid!: string
 
   activeTab = 1
-
   stats: StatsResult = null
-  ml: MLFrame[]
+  ml: MLFrame[] = []
   spec: Float32Array[] = null
   specSr: number
   freqArrays: {[index: string]: Float32Array} = null
   audioDuration: number
+  mlEnabled = false
+  inferenceBackend = ''
+  mlError = ''
+  analysisLoaded = false
+  loadError = ''
 
-  created()
-  {
-    console.log('Viewing results for', this.uuid)
-    request('/results', {params: {uuid: this.uuid}}).then(async it =>
-    {
-      let obj = await decodeBdictResult(await it.arrayBuffer())
-      this.stats = obj.result
-      this.ml = obj.ml
-      this.specSr = obj.spec_sr
-      this.spec = obj.spec
-      this.freqArrays = obj.freqArrays
-      this.audioDuration = obj.audio_dur
-      console.log(obj)
-    })
+  async created() {
+    try {
+      const result = await getLocalAnalysis(this.uuid)
+      if (!result) throw new Error('This local result is no longer available in this browser. Analyze the audio again.')
+      this.stats = result.result as unknown as StatsResult
+      this.ml = result.ml as MLFrame[]
+      this.spec = result.spec
+      this.specSr = result.spec_sr
+      this.freqArrays = result.freqArrays
+      this.audioDuration = result.audio_dur
+      this.mlEnabled = result.ml_enabled
+      this.inferenceBackend = result.inference_backend || ''
+      this.mlError = result.ml_error || ''
+      this.analysisLoaded = true
+    } catch (error) {
+      this.loadError = error instanceof Error ? error.message : String(error)
+      console.error('Could not load browser-local result:', error)
+    }
   }
 }
 </script>
@@ -97,6 +116,17 @@ export default class Results extends Vue
   // Card effect
   margin-bottom: 20px
   z-index: 2
+
+.inference-note
+  margin: 8px 20px
+  color: $color-fg
+  text-align: center
+
+.load-error, .load-placeholder
+  margin: 24px
+  color: #ffbc29
+  text-align: center
+  overflow-wrap: anywhere
 
 .result-nav
   display: flex

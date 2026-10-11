@@ -6,6 +6,13 @@
         <div id="subtitle">You can toggle things here!</div>
       </div>
 
+      <section class="local-models">
+        <div><strong>Local inference models</strong></div>
+        <p>Download the required TensorFlow.js weights into this browser. The files are cached by the local service worker for offline use.</p>
+        <el-button type="primary" :loading="modelsBusy" @click="downloadLocalModels">{{ modelsBusy ? 'Downloading…' : 'Download models' }}</el-button>
+        <div class="model-status" role="status">{{ modelStatus }}</div>
+      </section>
+
       <div id="options">
         <div v-for="option of options" :class="getClass(option)">
           <div class="desc" v-html="marked(option.desc)" />
@@ -34,15 +41,42 @@ import {options, Setting} from '@/js/Setting';
 import {Options, Vue} from 'vue-class-component';
 import {marked} from 'marked';
 import HyInput from "@/views/comp/HyInput.vue";
-import {ElMessageBox} from "element-plus";
+import {ElMessage, ElMessageBox} from "element-plus";
 import {ref} from "vue";
+import {downloadModels as downloadModelFiles, modelsDownloaded} from '@/js/local-inference/ModelManager';
 
 @Options({components: {HyInput}})
 export default class Settings extends Vue
 {
+  declare $t: (key: string) => string
+
   // options = options.map(it => ref(it))
   options = options
   marked = marked
+  modelsBusy = false
+  modelStatus = 'Checking local model cache…'
+
+  async mounted() {
+    try {
+      this.modelStatus = await modelsDownloaded() ? 'Both models are downloaded and ready for offline use.' : 'Models are not downloaded yet.'
+    } catch (error) {
+      this.modelStatus = error instanceof Error ? error.message : String(error)
+    }
+  }
+
+  async downloadLocalModels() {
+    this.modelsBusy = true
+    try {
+      await downloadModelFiles(message => { this.modelStatus = message })
+      this.modelStatus = 'Both models are downloaded and ready for offline use.'
+      ElMessage.success('Local inference models downloaded.')
+    } catch (error) {
+      this.modelStatus = error instanceof Error ? error.message : String(error)
+      ElMessage.error(this.modelStatus)
+    } finally {
+      this.modelsBusy = false
+    }
+  }
 
   getClass<T>(option: Setting<T>)
   {
@@ -80,6 +114,20 @@ export default class Settings extends Vue
 
     #subtitle
       font-size: 0.8em
+
+  .local-models
+    padding: 12px
+    border: 1px solid #ddd
+    border-radius: 6px
+    text-align: left
+
+    p
+      margin: 8px 0 12px
+      font-size: 0.9em
+
+  .model-status
+    margin-top: 8px
+    overflow-wrap: anywhere
 
   #options
     text-align: left

@@ -19,12 +19,13 @@
           <span class="desc"> {{ featureDescriptions[f].split(' - ')[1] }}</span>
         </div>
         <div class="classification-bar unselectable clickable" @click="updateAccordion(f)">
-          <span class="f fbox-vcenter"
+          <span v-if="hasFemProbability(f)" class="f fbox-vcenter"
             :style="{ width: `${(stats.fem_prob[f] * 100).toFixed(0)}%`, borderRight: `${stats.fem_prob[f] !== 0 ? '5px solid white' : 'none'}` }">
             <span class="percentage-sub" :class="{ right: stats.fem_prob[f] < 0.5 }">
               {{ (stats.fem_prob[f] * 100).toFixed(0) }}%
             </span>
           </span>
+          <span v-else class="probability-unavailable">N/A</span>
         </div>
         <div class="chart-wrapper">
           <ScatterChart :height="200" :chartData="getCurveData(f)" :options="getOptions(f)" style="min-height: 200px" />
@@ -37,7 +38,8 @@
 
     <div class="title">Machine Learning Classification</div>
 
-    <div class="feature" v-if="ml.length > 0">
+    <div class="no-features" v-if="!mlEnabled">Local ML classification is disabled in Settings.</div>
+    <div class="feature" v-else-if="ml.length > 0">
       <div class="description">
         <span class="name">Machine Learning</span>
         <span class="desc">How your voice might sound like to a robot.</span>
@@ -77,11 +79,11 @@ const featureDescriptions = {
 export type FeatureLiteral = string
 
 export interface Features {
-  pitch: number
-  f1: number
-  f2: number
-  f3: number
-  tilt: number
+  pitch: number | null
+  f1: number | null
+  f2: number | null
+  f3: number | null
+  tilt: number | null
 }
 
 export interface StatsResult {
@@ -98,6 +100,7 @@ export default class ClassificationResults extends Vue {
 
   @Prop() stats: StatsResult
   @Prop() ml: MLFrame[]
+  @Prop() mlEnabled: boolean
   @Prop() audioDuration: number
 
   mounted() {
@@ -125,6 +128,10 @@ export default class ClassificationResults extends Vue {
     $(`.feature:not(.${feature})`).accordion({ active: false })
   }
 
+  hasFemProbability(feature: FeatureLiteral): boolean {
+    return Number.isFinite(this.stats?.fem_prob?.[feature])
+  }
+
   getOptions(feature: FeatureLiteral) {
     const chartOptions: ChartOptions = {
       scales: {
@@ -140,8 +147,8 @@ export default class ClassificationResults extends Vue {
           annotations: {
             you: {
               type: 'line',
-              xMin: this.stats.means[feature],
-              xMax: this.stats.means[feature],
+              xMin: this.stats.means[feature] ?? undefined,
+              xMax: this.stats.means[feature] ?? undefined,
               borderColor: 'rgba(106,100,100,0.47)',
               borderWidth: 2,
               label: {
@@ -213,6 +220,12 @@ export default class ClassificationResults extends Vue {
     border-radius: 10px
     margin-bottom: 10px
     overflow: hidden
+
+    .probability-unavailable
+      margin-left: 10px
+      color: #6a6464
+      font-size: 12px
+      line-height: 30px
 
     .f
       background: $color-trans-pink
