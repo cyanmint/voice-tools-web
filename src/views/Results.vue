@@ -118,9 +118,13 @@ export default class Results extends Vue
   z-index: 2
 
 .inference-note
-  margin: 8px 20px
+  height: 20px
+  margin: 0 20px
   color: $color-fg
+  font-size: 12px
+  line-height: 20px
   text-align: center
+  white-space: nowrap
 
 .load-error, .load-placeholder
   margin: 24px
@@ -131,7 +135,7 @@ export default class Results extends Vue
 .result-nav
   display: flex
   flex-direction: row
-  margin-top: 20px
+  margin-top: 0
   justify-content: center
   min-height: 40px
   color: $color-text-main
