@@ -30,6 +30,7 @@ import {getSetting} from '@/js/Setting';
 import {runLocalAnalysis} from '@/js/local-inference/LocalAnalysisClient';
 import {modelsDownloaded} from '@/js/local-inference/ModelManager';
 import {saveLocalAnalysis} from '@/js/local-inference/LocalResultStore';
+import {detectAudioSampleRate} from '@/js/local-inference/audio-metadata.js';
 import router from '@/router';
 
 function downmix(buffer: AudioBuffer): Float32Array {
@@ -91,8 +92,15 @@ export default class Home extends Vue
     let context: AudioContext | null = null
     try {
       this.progressText = 'Decoding audio locally…'
-      context = new AudioContext()
-      const decoded = await context.decodeAudioData(await file.arrayBuffer())
+      const audioData = await file.arrayBuffer()
+      const sourceSampleRate = detectAudioSampleRate(new Uint8Array(audioData))
+      context = sourceSampleRate
+        ? new AudioContext({sampleRate: sourceSampleRate})
+        : new AudioContext()
+      const decoded = await context.decodeAudioData(audioData)
+      if (sourceSampleRate && decoded.sampleRate !== sourceSampleRate) {
+        throw new Error(`Could not preserve the source audio rate (${sourceSampleRate} Hz); decoded at ${decoded.sampleRate} Hz.`)
+      }
       const inferenceEnabled = Boolean(getSetting('local.inference.enabled').val)
       if (inferenceEnabled && !await modelsDownloaded()) {
         throw new Error('Download the TensorFlow.js models in Settings first, or turn off ML classification.')
