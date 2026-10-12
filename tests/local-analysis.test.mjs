@@ -139,6 +139,29 @@ test('feature means use NumPy float32 pairwise accumulation semantics', () => {
   assert.equal(meanNumpyFloat32(values), 797.2601928710938)
 })
 
+// Golden Float32 output from TensorFlow 2.10.1 + TensorFlow-I/O 0.27.0 on the same PCM fixture.
+test('Mel spectrogram matches the backend TensorFlow-I/O fixture across all frames', () => {
+  const wav = readFileSync(fileURLToPath(new URL('../public/e2e-fixture.wav', import.meta.url)))
+  const samples = Float32Array.from({length: 32000}, (_, index) => wav.readInt16LE(44 + index * 2) / 32768)
+  const bytes = readFileSync(fileURLToPath(new URL('./fixtures/tfio-mel-e2e.f32', import.meta.url)))
+  const expected = new Float32Array(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength))
+  const actual = computeMelSpectrogram(samples, 16000)
+  assert.equal(actual.length, 63)
+  assert.equal(expected.length, actual.length * 128)
+  let maxAbs = 0
+  let absoluteSum = 0
+  for (let frame = 0; frame < actual.length; frame += 1) {
+    for (let band = 0; band < 128; band += 1) {
+      const difference = Math.abs(Math.fround(actual[frame][band]) - expected[frame * 128 + band])
+      maxAbs = Math.max(maxAbs, difference)
+      absoluteSum += difference
+    }
+  }
+  const mae = absoluteSum / expected.length
+  assert.ok(mae <= 1e-5 && maxAbs <= 3e-4,
+    `TFIO parity: MAE ${mae}, maximum absolute error ${maxAbs}`)
+})
+
 test('Mel spectrogram matches TensorFlow-I/O magnitude, padding, and HTK filterbank semantics', () => {
   const sampleRate = 16000
   const fftSize = 2048
