@@ -1,5 +1,6 @@
 import { calculatePraatFrequencyArray, calculatePraatSpectralTilt } from './praat-analysis.js'
 import { computeMelSpectrogram } from './signal-analysis.js'
+import vox1Data from '../../data/vox1_data.js'
 
 const FEATURES = ['pitch', 'f1', 'f2', 'f3', 'tilt']
 
@@ -41,27 +42,39 @@ function meanFinite(values) {
   return meanNumpyFloat32(values)
 }
 
-function interpolate(xValues, yValues, value) {
-  if (!Array.isArray(xValues) || !Array.isArray(yValues) || xValues.length !== yValues.length || !xValues.length) return 0
-  if (value < xValues[0] || value > xValues[xValues.length - 1]) return 0
-  for (let index = 1; index < xValues.length; index += 1) {
-    if (value > xValues[index]) continue
-    const width = xValues[index] - xValues[index - 1]
-    if (!width) return yValues[index]
-    const ratio = (value - xValues[index - 1]) / width
-    return yValues[index - 1] + ratio * (yValues[index] - yValues[index - 1])
-  }
-  return yValues[yValues.length - 1]
+function percentile(values, probability) {
+  const sorted = [...values].sort((left, right) => left - right)
+  const position = (sorted.length - 1) * probability
+  const lower = Math.floor(position)
+  const upper = Math.ceil(position)
+  return sorted[lower] + (sorted[upper] - sorted[lower]) * (position - lower)
 }
 
-function feminineProbability(curves, feature, value) {
+function gaussianKde(values, value) {
+  const count = values.length
+  const mean = values.reduce((sum, sample) => sum + sample, 0) / count
+  const variance = values.reduce((sum, sample) => sum + (sample - mean) ** 2, 0) / (count - 1)
+  const bandwidth = Math.sqrt(variance) * count ** -0.2
+  const normalizer = count * bandwidth * Math.sqrt(2 * Math.PI)
+  return values.reduce((sum, sample) => {
+    const standardized = (value - sample) / bandwidth
+    return sum + Math.exp(-0.5 * standardized * standardized) / normalizer
+  }, 0)
+}
+
+export function feminineProbability(distributions, feature, value) {
   if (!Number.isFinite(value)) return null
-  const curve = curves?.[feature]
-  if (!curve) return null
-  const female = interpolate(curve.f?.[0], curve.f?.[1], value)
-  const male = interpolate(curve.m?.[0], curve.m?.[1], value)
-  const total = female + male
-  return total > 0 ? female / total : null
+  const groups = distributions?.[feature]
+  const female = groups?.f
+  const male = groups?.m
+  if (!Array.isArray(female) || !Array.isArray(male) || female.length < 2 || male.length < 2) return null
+
+  if (value < percentile(male, 0.01)) return 0
+  if (value > percentile(female, 0.99)) return 1
+  const femaleDensity = gaussianKde(female, value)
+  const maleDensity = gaussianKde(male, value)
+  const total = femaleDensity + maleDensity
+  return total > 0 ? femaleDensity / total : null
 }
 
 /** Build the browser-local equivalent of the fields consumed by Results.vue. */
@@ -77,7 +90,7 @@ export async function buildLocalAnalysis(samples, sampleRate, duration, { infer,
     feature, meanFinite(frequencyRows.map(row => row[column])),
   ]))
   means.tilt = calculatePraatSpectralTilt(samples)
-  const fem_prob = Object.fromEntries(FEATURES.map(feature => [feature, feminineProbability(curves, feature, means[feature])]))
+  const fem_prob = Object.fromEntries(FEATURES.map(feature => [feature, feminineProbability(vox1Data, feature, means[feature])]))
   const freqArrays = Object.fromEntries(FEATURES.slice(0, 4).map((feature, column) => [
     feature, Float32Array.from(frequencyRows, row => Number.isFinite(row[column]) ? row[column] : Number.NaN),
   ]))

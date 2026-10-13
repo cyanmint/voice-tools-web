@@ -2,10 +2,11 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
-import { buildLocalAnalysis, meanNumpyFloat32 } from '../src/js/local-inference/analysis.js'
-import { calculatePraatFrequencyArray, praatFormantTimeGrid, resampleForFormants } from '../src/js/local-inference/praat-analysis.js'
+import { buildLocalAnalysis, feminineProbability, meanNumpyFloat32 } from '../src/js/local-inference/analysis.js'
+import { calculatePraatFrequencyArray, calculatePraatSpectralTilt, praatFormantTimeGrid, resampleForFormants } from '../src/js/local-inference/praat-analysis.js'
 import { calculateSpectralTilt, computeMelSpectrogram } from '../src/js/local-inference/signal-analysis.js'
 import { resolveModelUrls } from '../src/js/local-inference/model-urls.js'
+import vox1Data from '../src/data/vox1_data.js'
 
 const referenceCurves = Object.fromEntries(['pitch', 'f1', 'f2', 'f3', 'tilt'].map(feature => [feature, {
   f: [[0, 10000], [0.5, 0.5]],
@@ -162,6 +163,15 @@ test('Mel spectrogram matches the backend TensorFlow-I/O fixture across all fram
     `TFIO parity: MAE ${mae}, maximum absolute error ${maxAbs}`)
 })
 
+test('KDE classification matches backend tail boundaries and continuous density values', () => {
+  const distributions = vox1Data
+  assert.equal(feminineProbability(distributions, 'f3', 3100), 1)
+  assert.equal(feminineProbability(distributions, 'tilt', -0.5), 0)
+  assert.ok(Math.abs(feminineProbability(distributions, 'f2', 1650) - 0.2504696248549695) < 1e-12)
+  assert.equal(Math.round(feminineProbability(distributions, 'f2', 1644.72) * 100), 22)
+  assert.equal(Math.round(feminineProbability(distributions, 'f2', 1562) * 100), 4)
+})
+
 test('Mel spectrogram matches TensorFlow-I/O magnitude, padding, and HTK filterbank semantics', () => {
   const sampleRate = 16000
   const fftSize = 2048
@@ -214,6 +224,15 @@ test('buildLocalAnalysis keeps missing pitch values as NaN instead of converting
   const samples = new Float32Array(16000)
   const result = await buildLocalAnalysis(samples, 16000, 1, { infer: async () => [], curves: referenceCurves })
   assert.ok(result.freqArrays.pitch.some(Number.isNaN))
+})
+
+test('browser spectral tilt yields a classifiable value for voiced PCM', () => {
+  const length = 140000
+  const samples = Float32Array.from({length}, (_, i) =>
+    0.1 * Math.sin(2 * Math.PI * 180 * i / 16000) + 0.05 * Math.sin(2 * Math.PI * 763 * i / 16000))
+  const tilt = calculatePraatSpectralTilt(samples)
+  assert.ok(Number.isFinite(tilt))
+  assert.ok(Number.isFinite(feminineProbability(vox1Data, 'tilt', tilt)))
 })
 
 test('spectral tilt supports longer recordings without spreading the full spectrum onto the call stack', () => {
